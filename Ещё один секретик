@@ -1,206 +1,351 @@
-from flask import Flask, render_template, request, flash, jsonify
-import requests
-import os
-import re
-from dotenv import load_dotenv
-
-load_dotenv()
-
-app = Flask(__name__)
-app.secret_key = os.getenv('SECRET_KEY', 'your-secret-key-here')
-
-# Конфигурация SpravPortal API v3
-SPRAVPORTAL_API_KEY = os.getenv('SPRAVPORTAL_API_KEY', '')
-# Эндпоинт API v3 (уточните у SpravPortal актуальный URL)
-SPRAVPORTAL_API_URL = 'https://api.spravportal.ru/v3/phone/info'
-
-def validate_phone(phone):
-    """Очистка и базовая валидация номера телефона"""
-    # Удаляем все нецифровые символы, кроме +
-    cleaned = re.sub(r'[^\d+]', '', phone)
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SpravPortal Checker - Проверка номеров телефонов</title>
     
-    # Проверяем, что номер содержит хотя бы 5 цифр
-    digits = re.findall(r'\d', cleaned)
-    if len(digits) < 5:
-        return False, None
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
-    # Приводим к формату с +, если его нет
-    if not cleaned.startswith('+'):
-        if cleaned.startswith('8') and len(cleaned) == 11:
-            # Конвертируем российский 8 в +7
-            cleaned = '+7' + cleaned[1:]
-        elif len(cleaned) == 10:
-            # Американский формат
-            cleaned = '+1' + cleaned
-        else:
-            cleaned = '+' + cleaned
-    
-    return True, cleaned
-
-def check_phone_spravportal(phone):
-    """
-    Проверка номера через SpravPortal API v3
-    Возвращает информацию о стране, операторе, регионе и статусе спама
-    """
-    if not SPRAVPORTAL_API_KEY:
-        return {
-            'valid': False,
-            'error': 'API ключ SpravPortal не настроен. Получите ключ на spravportal.ru/api'
+    <style>
+        body {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
-    
-    headers = {
-        'Authorization': f'Bearer {SPRAVPORTAL_API_KEY}',
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-    }
-    
-    # Формат запроса согласно документации API v3
-    payload = {
-        'phone': phone,
-        'include_spam_check': True,  # Проверка по базе нежелательных номеров
-        'include_mnp': True           # Проверка переноса номера
-    }
-    
-    try:
-        response = requests.post(
-            SPRAVPORTAL_API_URL, 
-            json=payload, 
-            headers=headers, 
-            timeout=10
-        )
         
-        if response.status_code == 401:
-            return {
-                'valid': False,
-                'error': 'Неверный API ключ SpravPortal. Проверьте настройки.'
+        .container-custom {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .card {
+            border: none;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            background: #0f3460;
+            color: white;
+        }
+        
+        .card-header {
+            background: linear-gradient(135deg, #e94560 0%, #533483 100%);
+            border-radius: 20px 20px 0 0 !important;
+            padding: 30px;
+            text-align: center;
+            border-bottom: none;
+        }
+        
+        .btn-check-phone {
+            background: linear-gradient(135deg, #e94560 0%, #533483 100%);
+            border: none;
+            padding: 12px 30px;
+            font-weight: bold;
+            transition: all 0.3s ease;
+        }
+        
+        .btn-check-phone:hover {
+            transform: scale(1.02);
+            box-shadow: 0 5px 20px rgba(233, 69, 96, 0.4);
+        }
+        
+        .info-card {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 20px;
+            margin-top: 20px;
+            animation: fadeIn 0.5s ease;
+        }
+        
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
             }
-        
-        if response.status_code == 429:
-            return {
-                'valid': False,
-                'error': 'Превышен лимит запросов API. Попробуйте позже.'
+            to {
+                opacity: 1;
+                transform: translateY(0);
             }
-        
-        if response.status_code != 200:
-            return {
-                'valid': False,
-                'error': f'Ошибка API: {response.status_code} - {response.text}'
-            }
-        
-        data = response.json()
-        
-        # Проверяем успешность ответа
-        if not data.get('success', False):
-            return {
-                'valid': False,
-                'error': data.get('message', 'Неизвестная ошибка API')
-            }
-        
-        result = data.get('result', {})
-        
-        # Определяем статус безопасности на основе данных API
-        spam_status = result.get('spam_status', {})
-        is_dangerous = spam_status.get('is_spam', False) or spam_status.get('is_fraud', False)
-        
-        if is_dangerous:
-            security_status = '⚠️ НЕБЕЗОПАСНЫЙ - Обнаружен в базах спама/мошенников'
-            security_class = 'danger'
-            security_icon = 'fa-exclamation-triangle'
-        else:
-            security_status = '✅ Безопасный - Не найден в базах нежелательных номеров'
-            security_class = 'safe'
-            security_icon = 'fa-check-circle'
-        
-        # Дополнительная информация о спаме
-        spam_details = ''
-        if spam_status.get('spam_reports', 0) > 0:
-            spam_details = f' | Жалоб: {spam_status.get("spam_reports", 0)}'
-        
-        return {
-            'valid': True,
-            'phone_formatted': result.get('phone_formatted', phone),
-            'country': result.get('country', {}).get('name', 'Неизвестно'),
-            'country_code': result.get('country', {}).get('code', ''),
-            'region': result.get('region', {}).get('name', 'Не указан'),
-            'operator': result.get('operator', {}).get('name', 'Неизвестно'),
-            'operator_code': result.get('operator', {}).get('code', ''),
-            'line_type': result.get('line_type', 'Неизвестно'),
-            'timezone': result.get('region', {}).get('timezone', ''),
-            'mnp_transferred': result.get('mnp', {}).get('is_transferred', False),
-            'mnp_original_operator': result.get('mnp', {}).get('original_operator', ''),
-            'security_status': security_status,
-            'security_class': security_class,
-            'security_icon': security_icon,
-            'spam_details': spam_details,
-            'spam_category': spam_status.get('category', ''),
-            'spam_reports': spam_status.get('spam_reports', 0),
-            'last_activity': result.get('last_activity', ''),
-            'has_comments': result.get('comments_count', 0) > 0
         }
         
-    except requests.exceptions.Timeout:
-        return {
-            'valid': False,
-            'error': 'Превышено время ожидания ответа от API'
+        .info-item {
+            padding: 12px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
         }
-    except requests.exceptions.ConnectionError:
-        return {
-            'valid': False,
-            'error': 'Не удалось подключиться к API SpravPortal. Проверьте соединение.'
-        }
-    except Exception as e:
-        return {
-            'valid': False,
-            'error': f'Ошибка при обращении к API: {str(e)}'
-        }
-
-@app.route('/', methods=['GET', 'POST'])
-def index():
-    phone_info = None
-    
-    if request.method == 'POST':
-        phone_number = request.form.get('phone_number', '').strip()
         
-        if not phone_number:
-            flash('Пожалуйста, введите номер телефона', 'error')
-        else:
-            is_valid, cleaned_phone = validate_phone(phone_number)
+        .info-item:last-child {
+            border-bottom: none;
+        }
+        
+        .info-label {
+            font-weight: bold;
+            color: #a8b2d1;
+        }
+        
+        .info-value {
+            color: white;
+        }
+        
+        .security-badge {
+            padding: 8px 20px;
+            border-radius: 25px;
+            font-weight: bold;
+            display: inline-block;
+        }
+        
+        .security-safe {
+            background: #00b4d8;
+            color: white;
+        }
+        
+        .security-danger {
+            background: #e94560;
+            color: white;
+        }
+        
+        .input-group-text {
+            background: #533483;
+            color: white;
+            border: none;
+        }
+        
+        .form-control {
+            background: #1a1a2e;
+            border: 1px solid #533483;
+            color: white;
+        }
+        
+        .form-control:focus {
+            background: #1a1a2e;
+            border-color: #e94560;
+            box-shadow: 0 0 0 0.2rem rgba(233, 69, 96, 0.25);
+            color: white;
+        }
+        
+        .form-control::placeholder {
+            color: #6c757d;
+        }
+        
+        .alert-custom {
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .badge-mnp {
+            background: #ffd166;
+            color: #1a1a2e;
+            padding: 5px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+        }
+        
+        .operator-badge {
+            background: #533483;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 13px;
+        }
+        
+        hr {
+            border-color: rgba(255, 255, 255, 0.1);
+        }
+        
+        code {
+            background: #1a1a2e;
+            padding: 4px 8px;
+            border-radius: 8px;
+            color: #e94560;
+        }
+    </style>
+</head>
+<body>
+    <div class="container-custom">
+        <div class="card">
+            <div class="card-header">
+                <i class="fas fa-shield-alt fa-3x mb-3"></i>
+                <h1 class="display-6 fw-bold">SpravPortal Checker</h1>
+                <p class="lead">Проверка номеров через API v3 — спам, мошенники, оператор и регион</p>
+            </div>
             
-            if not is_valid:
-                flash('Пожалуйста, введите корректный номер телефона (минимум 5 цифр)', 'error')
-            else:
-                # Проверяем через SpravPortal API
-                result = check_phone_spravportal(cleaned_phone)
+            <div class="card-body p-4">
+                <!-- Форма ввода номера -->
+                <form method="POST" action="/" class="mb-4">
+                    <div class="input-group mb-3">
+                        <span class="input-group-text">
+                            <i class="fas fa-phone"></i>
+                        </span>
+                        <input type="tel" 
+                               class="form-control form-control-lg" 
+                               name="phone_number" 
+                               placeholder="+7 (999) 123-45-67 или 89515200611"
+                               required
+                               value="{{ request.form.get('phone_number', '') }}">
+                    </div>
+                    
+                    <button type="submit" class="btn btn-check-phone btn-lg w-100 text-white">
+                        <i class="fas fa-search"></i> Проверить номер через SpravPortal
+                    </button>
+                </form>
                 
-                if result.get('valid'):
-                    phone_info = result
-                    flash('Информация о номере успешно получена!', 'success')
-                else:
-                    flash(result.get('error', 'Не удалось проверить номер'), 'error')
+                <!-- Flash сообщения -->
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                        {% for category, message in messages %}
+                            <div class="alert alert-{{ 'success' if category == 'success' else 'danger' }} alert-custom fade show" role="alert">
+                                <i class="fas fa-{{ 'check-circle' if category == 'success' else 'exclamation-triangle' }}"></i>
+                                {{ message }}
+                            </div>
+                        {% endfor %}
+                    {% endif %}
+                {% endwith %}
+                
+                <!-- Информация о номере -->
+                {% if phone_info %}
+                    <div class="info-card">
+                        <h4 class="mb-3 text-center">
+                            <i class="fas fa-info-circle"></i> Результат проверки
+                        </h4>
+                        
+                        <!-- Безопасность - основной блок -->
+                        <div class="info-item mb-3" style="background: rgba(0,0,0,0.2); border-radius: 10px;">
+                            <span class="info-label">
+                                <i class="fas fa-shield-alt"></i> Вердикт:
+                            </span>
+                            <span class="info-value">
+                                <span class="security-badge security-{{ phone_info.security_class }}">
+                                    <i class="fas {{ phone_info.security_icon }}"></i>
+                                    {{ phone_info.security_status }}
+                                </span>
+                                {% if phone_info.spam_details %}
+                                    <small class="text-muted ms-2">{{ phone_info.spam_details }}</small>
+                                {% endif %}
+                            </span>
+                        </div>
+                        
+                        <div class="info-item">
+                            <span class="info-label">
+                                <i class="fas fa-phone-alt"></i> Номер:
+                            </span>
+                            <span class="info-value">
+                                <code>{{ phone_info.phone_formatted }}</code>
+                            </span>
+                        </div>
+                        
+                        <div class="info-item">
+                            <span class="info-label">
+                                <i class="fas fa-globe"></i> Страна:
+                            </span>
+                            <span class="info-value">
+                                <strong>{{ phone_info.country }}</strong>
+                                {% if phone_info.country_code %}
+                                    <span class="operator-badge">+{{ phone_info.country_code }}</span>
+                                {% endif %}
+                            </span>
+                        </div>
+                        
+                        {% if phone_info.region %}
+                        <div class="info-item">
+                            <span class="info-label">
+                                <i class="fas fa-map-marker-alt"></i> Регион:
+                            </span>
+                            <span class="info-value">{{ phone_info.region }}</span>
+                        </div>
+                        {% endif %}
+                        
+                        {% if phone_info.timezone %}
+                        <div class="info-item">
+                            <span class="info-label">
+                                <i class="fas fa-clock"></i> Часовой пояс:
+                            </span>
+                            <span class="info-value">{{ phone_info.timezone }}</span>
+                        </div>
+                        {% endif %}
+                        
+                        <div class="info-item">
+                            <span class="info-label">
+                                <i class="fas fa-tower-cell"></i> Оператор:
+                            </span>
+                            <span class="info-value">
+                                <span class="operator-badge">{{ phone_info.operator }}</span>
+                                {% if phone_info.operator_code %}
+                                    <small class="text-muted">(код {{ phone_info.operator_code }})</small>
+                                {% endif %}
+                            </span>
+                        </div>
+                        
+                        <div class="info-item">
+                            <span class="info-label">
+                                <i class="fas fa-tag"></i> Тип линии:
+                            </span>
+                            <span class="info-value">{{ phone_info.line_type }}</span>
+                        </div>
+                        
+                        {% if phone_info.mnp_transferred %}
+                        <div class="info-item">
+                            <span class="info-label">
+                                <i class="fas fa-exchange-alt"></i> Перенос номера (MNP):
+                            </span>
+                            <span class="info-value">
+                                <span class="badge-mnp">
+                                    <i class="fas fa-arrow-right"></i> Перенесён от {{ phone_info.mnp_original_operator }}
+                                </span>
+                            </span>
+                        </div>
+                        {% endif %}
+                        
+                        {% if phone_info.spam_category %}
+                        <div class="info-item">
+                            <span class="info-label">
+                                <i class="fas fa-tag"></i> Категория:
+                            </span>
+                            <span class="info-value">{{ phone_info.spam_category }}</span>
+                        </div>
+                        {% endif %}
+                        
+                        {% if phone_info.spam_reports > 0 %}
+                        <div class="info-item">
+                            <span class="info-label">
+                                <i class="fas fa-flag"></i> Жалобы пользователей:
+                            </span>
+                            <span class="info-value">{{ phone_info.spam_reports }}</span>
+                        </div>
+                        {% endif %}
+                        
+                        {% if phone_info.has_comments %}
+                        <div class="info-item">
+                            <span class="info-label">
+                                <i class="fas fa-comments"></i> Отзывы:
+                            </span>
+                            <span class="info-value">Есть отзывы на портале</span>
+                        </div>
+                        {% endif %}
+                    </div>
+                {% endif %}
+                
+                <!-- Информация об API -->
+                <div class="mt-4 text-center">
+                    <hr>
+                    <p class="small text-muted">
+                        <i class="fas fa-database"></i> Данные предоставлены SpravPortal API v3 — 
+                        более 55 млн номеров, ежедневное обновление, проверка спама и мошенников
+                    </p>
+                    <p class="small text-muted">
+                        <i class="fas fa-lock"></i> Источники: Реестр нумерации РФ, БДПН, база нежелательных номеров
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
     
-    return render_template('index.html', phone_info=phone_info)
-
-@app.route('/api/check', methods=['POST'])
-def api_check():
-    """JSON API endpoint для программной проверки номеров"""
-    data = request.get_json()
-    phone_number = data.get('phone', '').strip()
-    
-    if not phone_number:
-        return jsonify({'error': 'Номер телефона не указан'}), 400
-    
-    is_valid, cleaned_phone = validate_phone(phone_number)
-    
-    if not is_valid:
-        return jsonify({'error': 'Неверный формат номера'}), 400
-    
-    result = check_phone_spravportal(cleaned_phone)
-    return jsonify(result)
-
-@app.route('/health', methods=['GET'])
-def health_check():
-    """Endpoint для проверки работоспособности"""
-    return jsonify({'status': 'ok', 'api_configured': bool(SPRAVPORTAL_API_KEY)})
-
-if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
