@@ -1,0 +1,206 @@
+from flask import Flask, render_template, request, flash, jsonify
+import requests
+import os
+import re
+from dotenv import load_dotenv
+
+load_dotenv()
+
+app = Flask(__name__)
+app.secret_key = os.getenv('SECRET_KEY', 'your-secret-key-here')
+
+# Конфигурация SpravPortal API v3
+SPRAVPORTAL_API_KEY = os.getenv('SPRAVPORTAL_API_KEY', '')
+# Эндпоинт API v3 (уточните у SpravPortal актуальный URL)
+SPRAVPORTAL_API_URL = 'https://api.spravportal.ru/v3/phone/info'
+
+def validate_phone(phone):
+    """Очистка и базовая валидация номера телефона"""
+    # Удаляем все нецифровые символы, кроме +
+    cleaned = re.sub(r'[^\d+]', '', phone)
+    
+    # Проверяем, что номер содержит хотя бы 5 цифр
+    digits = re.findall(r'\d', cleaned)
+    if len(digits) < 5:
+        return False, None
+    
+    # Приводим к формату с +, если его нет
+    if not cleaned.startswith('+'):
+        if cleaned.startswith('8') and len(cleaned) == 11:
+            # Конвертируем российский 8 в +7
+            cleaned = '+7' + cleaned[1:]
+        elif len(cleaned) == 10:
+            # Американский формат
+            cleaned = '+1' + cleaned
+        else:
+            cleaned = '+' + cleaned
+    
+    return True, cleaned
+
+def check_phone_spravportal(phone):
+    """
+    Проверка номера через SpravPortal API v3
+    Возвращает информацию о стране, операторе, регионе и статусе спама
+    """
+    if not SPRAVPORTAL_API_KEY:
+        return {
+            'valid': False,
+            'error': 'API ключ SpravPortal не настроен. Получите ключ на spravportal.ru/api'
+        }
+    
+    headers = {
+        'Authorization': f'Bearer {SPRAVPORTAL_API_KEY}',
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+    }
+    
+    # Формат запроса согласно документации API v3
+    payload = {
+        'phone': phone,
+        'include_spam_check': True,  # Проверка по базе нежелательных номеров
+        'include_mnp': True           # Проверка переноса номера
+    }
+    
+    try:
+        response = requests.post(
+            SPRAVPORTAL_API_URL, 
+            json=payload, 
+            headers=headers, 
+            timeout=10
+        )
+        
+        if response.status_code == 401:
+            return {
+                'valid': False,
+                'error': 'Неверный API ключ SpravPortal. Проверьте настройки.'
+            }
+        
+        if response.status_code == 429:
+            return {
+                'valid': False,
+                'error': 'Превышен лимит запросов API. Попробуйте позже.'
+            }
+        
+        if response.status_code != 200:
+            return {
+                'valid': False,
+                'error': f'Ошибка API: {response.status_code} - {response.text}'
+            }
+        
+        data = response.json()
+        
+        # Проверяем успешность ответа
+        if not data.get('success', False):
+            return {
+                'valid': False,
+                'error': data.get('message', 'Неизвестная ошибка API')
+            }
+        
+        result = data.get('result', {})
+        
+        # Определяем статус безопасности на основе данных API
+        spam_status = result.get('spam_status', {})
+        is_dangerous = spam_status.get('is_spam', False) or spam_status.get('is_fraud', False)
+        
+        if is_dangerous:
+            security_status = '⚠️ НЕБЕЗОПАСНЫЙ - Обнаружен в базах спама/мошенников'
+            security_class = 'danger'
+            security_icon = 'fa-exclamation-triangle'
+        else:
+            security_status = '✅ Безопасный - Не найден в базах нежелательных номеров'
+            security_class = 'safe'
+            security_icon = 'fa-check-circle'
+        
+        # Дополнительная информация о спаме
+        spam_details = ''
+        if spam_status.get('spam_reports', 0) > 0:
+            spam_details = f' | Жалоб: {spam_status.get("spam_reports", 0)}'
+        
+        return {
+            'valid': True,
+            'phone_formatted': result.get('phone_formatted', phone),
+            'country': result.get('country', {}).get('name', 'Неизвестно'),
+            'country_code': result.get('country', {}).get('code', ''),
+            'region': result.get('region', {}).get('name', 'Не указан'),
+            'operator': result.get('operator', {}).get('name', 'Неизвестно'),
+            'operator_code': result.get('operator', {}).get('code', ''),
+            'line_type': result.get('line_type', 'Неизвестно'),
+            'timezone': result.get('region', {}).get('timezone', ''),
+            'mnp_transferred': result.get('mnp', {}).get('is_transferred', False),
+            'mnp_original_operator': result.get('mnp', {}).get('original_operator', ''),
+            'security_status': security_status,
+            'security_class': security_class,
+            'security_icon': security_icon,
+            'spam_details': spam_details,
+            'spam_category': spam_status.get('category', ''),
+            'spam_reports': spam_status.get('spam_reports', 0),
+            'last_activity': result.get('last_activity', ''),
+            'has_comments': result.get('comments_count', 0) > 0
+        }
+        
+    except requests.exceptions.Timeout:
+        return {
+            'valid': False,
+            'error': 'Превышено время ожидания ответа от API'
+        }
+    except requests.exceptions.ConnectionError:
+        return {
+            'valid': False,
+            'error': 'Не удалось подключиться к API SpravPortal. Проверьте соединение.'
+        }
+    except Exception as e:
+        return {
+            'valid': False,
+            'error': f'Ошибка при обращении к API: {str(e)}'
+        }
+
+@app.route('/', methods=['GET', 'POST'])
+def index():
+    phone_info = None
+    
+    if request.method == 'POST':
+        phone_number = request.form.get('phone_number', '').strip()
+        
+        if not phone_number:
+            flash('Пожалуйста, введите номер телефона', 'error')
+        else:
+            is_valid, cleaned_phone = validate_phone(phone_number)
+            
+            if not is_valid:
+                flash('Пожалуйста, введите корректный номер телефона (минимум 5 цифр)', 'error')
+            else:
+                # Проверяем через SpravPortal API
+                result = check_phone_spravportal(cleaned_phone)
+                
+                if result.get('valid'):
+                    phone_info = result
+                    flash('Информация о номере успешно получена!', 'success')
+                else:
+                    flash(result.get('error', 'Не удалось проверить номер'), 'error')
+    
+    return render_template('index.html', phone_info=phone_info)
+
+@app.route('/api/check', methods=['POST'])
+def api_check():
+    """JSON API endpoint для программной проверки номеров"""
+    data = request.get_json()
+    phone_number = data.get('phone', '').strip()
+    
+    if not phone_number:
+        return jsonify({'error': 'Номер телефона не указан'}), 400
+    
+    is_valid, cleaned_phone = validate_phone(phone_number)
+    
+    if not is_valid:
+        return jsonify({'error': 'Неверный формат номера'}), 400
+    
+    result = check_phone_spravportal(cleaned_phone)
+    return jsonify(result)
+
+@app.route('/health', methods=['GET'])
+def health_check():
+    """Endpoint для проверки работоспособности"""
+    return jsonify({'status': 'ok', 'api_configured': bool(SPRAVPORTAL_API_KEY)})
+
+if __name__ == '__main__':
+    app.run(debug=True, host='0.0.0.0', port=5000)
