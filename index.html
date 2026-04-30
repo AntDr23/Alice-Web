@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>НомерБезопасен — проверка телефона</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app">
+        <div class="card">
+            <div class="brand">
+                <div class="brand-icon"></div>
+                <div class="brand-text">
+                    <h1>НомерБезопасен</h1>
+                    <p>Проверьте, кому можно доверять</p>
+                </div>
+            </div>
+
+            <div class="nav-menu">
+                <a href="index.html" class="nav-link active">Проверка телефона</a>
+                <a href="email.html" class="nav-link">Проверка почты</a>
+            </div>
+
+            <div class="form-area">
+                <div class="input-field">
+                    <label>Номер телефона</label>
+                    <div class="field-wrapper">
+                        <span class="field-prefix">+7</span>
+                        <input type="tel" placeholder="912 345-67-89" value="912 345-67-89">
+                    </div>
+                    <div class="field-foot">Например: 9123456789 или 999 123-45-67</div>
+                </div>
+                <button class="action-btn">Проверить номер</button>
+            </div>
+
+            <div class="result-area">
+                <div class="result-title">Результат проверки</div>
+
+                <div class="result-block green">
+                    <div class="result-status">
+                        <span class="status-emoji">✅</span>
+                        <span class="status-name">Безопасный номер</span>
+                    </div>
+                    <p class="status-message">Этот номер не замечен в мошенничестве и спаме</p>
+                    <ul class="status-details">
+                        <li>Индекс угрозы: низкий</li>
+                        <li>Репутация: хорошая (нет жалоб)</li>
+                        <li>Можно смело отвечать</li>
+                    </ul>
+                </div>
+
+                <div class="info-message">
+                    <span>Данные обновляются каждый день из проверенных источников</span>
+                </div>
+            </div>
+
+            <div class="footer-note">
+                🔒 Данные остаются анонимными. Мы ничего не сохраняем.
+            </div>
+        </div>
+    </div>
+</body>
+</html>
