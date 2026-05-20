@@ -8,7 +8,6 @@ DATABASE = 'phones.db'
 
 # ========== Работа с базой данных ==========
 def init_db():
-    """Создание таблицы в БД при первом запуске"""
     with get_db() as conn:
         conn.execute('''
             CREATE TABLE IF NOT EXISTS phones (
@@ -21,11 +20,8 @@ def init_db():
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
-        
-        # Создаем индекс для быстрого поиска по номеру
+    
         conn.execute('CREATE INDEX IF NOT EXISTS idx_phone ON phones(phone)')
-        
-        # Добавляем тестовые данные, если таблица пуста
         cursor = conn.execute('SELECT COUNT(*) FROM phones')
         if cursor.fetchone()[0] == 0:
             test_data = [
@@ -42,9 +38,8 @@ def init_db():
 
 @contextmanager
 def get_db():
-    """Контекстный менеджер для работы с БД"""
     conn = sqlite3.connect(DATABASE)
-    conn.row_factory = sqlite3.Row  # Доступ по имени колонки
+    conn.row_factory = sqlite3.Row 
     try:
         yield conn
         conn.commit()
@@ -53,14 +48,9 @@ def get_db():
 
 def normalize_phone(phone):
     """Нормализация телефонного номера"""
-    # Удаляем все символы кроме цифр и плюса
     cleaned = re.sub(r'[^\d+]', '', phone)
-    
-    # Если номер начинается с 8, заменяем на +7
     if cleaned.startswith('8') and len(cleaned) == 11:
         cleaned = '+7' + cleaned[1:]
-    
-    # Если нет +, добавляем его для российских номеров
     if not cleaned.startswith('+') and len(cleaned) == 11:
         cleaned = '+' + cleaned
     
@@ -71,13 +61,11 @@ def normalize_phone(phone):
 def get_phone_info(phone_number):
     """Получить информацию о номере телефона"""
     phone = normalize_phone(phone_number)
-    
     with get_db() as conn:
         result = conn.execute(
             'SELECT phone, name, operator, region, created_at, updated_at FROM phones WHERE phone = ?',
             (phone,)
         ).fetchone()
-    
     if result:
         return jsonify({
             "status": "success",
@@ -97,10 +85,8 @@ def get_all_phones():
     offset = (page - 1) * per_page
     
     with get_db() as conn:
-        # Получаем общее количество
         total = conn.execute('SELECT COUNT(*) FROM phones').fetchone()[0]
         
-        # Получаем записи с пагинацией
         phones = conn.execute(
             'SELECT phone, name, operator, region FROM phones LIMIT ? OFFSET ?',
             (per_page, offset)
@@ -122,7 +108,6 @@ def add_phone():
     """Добавить новый номер"""
     data = request.get_json()
     
-    # Валидация
     if not data:
         return jsonify({"status": "error", "message": "Нет данных"}), 400
     
@@ -167,7 +152,6 @@ def update_phone(phone_number):
     if not data:
         return jsonify({"status": "error", "message": "Нет данных для обновления"}), 400
     
-    # Формируем запрос динамически
     updates = []
     values = []
     
@@ -202,7 +186,6 @@ def delete_phone(phone_number):
     phone = normalize_phone(phone_number)
     
     with get_db() as conn:
-        # Сначала получаем имя для ответа
         result = conn.execute('SELECT name FROM phones WHERE phone = ?', (phone,)).fetchone()
         
         if not result:
@@ -250,7 +233,7 @@ def search():
 
 # ========== Инициализация и запуск ==========
 if __name__ == '__main__':
-    init_db()  # Создаем таблицу при первом запуске
+    init_db()
     print("🚀 API запущено на http://localhost:5000")
     print("📖 Доступные эндпоинты:")
     print("  GET    /api/phones              - получить все номера")
