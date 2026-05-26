@@ -21,22 +21,26 @@
                 <a href="index.html" class="nav-link active">Проверка телефона</a>
                 <a href="email.html" class="nav-link">Проверка почты</a>
             </div>
-
+            <form method="POST">
             <div class="form-area">
                 <div class="input-field">
                     <label>Номер телефона</label>
                     <div class="field-wrapper">
                         <span class="field-prefix">+7</span>
-                        <input type="tel" placeholder="912 345-67-89" value="912 345-67-89">
+                        <input type="number" name="number" placeholder="912 345-67-89" value="{{ number }}">
                     </div>
                     <div class="field-foot">Например: 9123456789 или 999 123-45-67</div>
                 </div>
-                <button class="action-btn">Проверить номер</button>
+                <button type="submit" class="action-btn">Проверить номер</button>
             </div>
+            </form>
 
-            <div class="result-area">
+            {% if result %}
+            <div class="result">
+                {% if result == 'safe' %}
+
+                <div class="result-area">
                 <div class="result-title">Результат проверки</div>
-
                 <div class="result-block green">
                     <div class="result-status">
                         <span class="status-emoji">✅</span>
@@ -55,6 +59,50 @@
                 </div>
             </div>
 
+                {% elif result == 'unsafe' %}
+
+                <div class="result-area">
+                <div class="result-title">Результат проверки</div>
+                <div class="result-block red">
+                    <div class="result-status">
+                        <span class="status-emoji">❌</span>
+                        <span class="status-name">Опасный номер</span>
+                    </div>
+                    <p class="status-message">Этот номер найден в утечках и спам-базах</p>
+                    <ul class="status-details">
+                        <li>Индекс угрозы: высокий</li>
+                        <li>Репутация: отрицательная</li>
+                        <li>Не стоит использовать!</li>
+                    </ul>
+                </div>
+
+                <div class="info-message">
+                    <span>Данные обновляются каждый день из проверенных источников</span>
+                </div>
+            </div>
+
+                {% elif result == 'nonum' %}
+                <div class="result-area">
+                <div class="result-title">Результат проверки</div>
+                <div class="result-block yellow">
+                    <div class="result-status">
+                        <span class="status-emoji">❌</span>
+                        <span class="status-name">Номер отсутствует</span>
+                    </div>
+                    <p class="status-message">Этот адрес отсутствует в базе данных</p>
+                    <ul class="status-details">
+                        <li>Индекс угрозы: средний</li>
+                        <li>Репутация: нет</li>
+                    </ul>
+                </div>
+
+                <div class="info-message">
+                    <span>Данные обновляются каждый день из проверенных источников</span>
+                </div>
+            </div>
+                {% endif %}
+            </div>
+        {% endif %}
             <div class="footer-note">
                 🔒 Данные остаются анонимными. Мы ничего не сохраняем.
             </div>
