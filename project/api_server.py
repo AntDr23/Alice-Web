@@ -7,35 +7,6 @@ app = Flask(__name__)
 DATABASE = 'phones.db'
 
 
-# ========== Работа с базой данных ==========
-def init_db():
-    with get_db() as conn:
-        conn.execute('''
-            CREATE TABLE IF NOT EXISTS phones (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                phone TEXT UNIQUE NOT NULL,
-                name TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-
-        conn.execute('CREATE INDEX IF NOT EXISTS idx_phone ON phones(phone)')
-
-        cursor = conn.execute('SELECT COUNT(*) FROM phones')
-        if cursor.fetchone()[0] == 0:
-            test_data = [
-                ("+79001234567", "Иван Петров"),
-                ("+79161234567", "Мария Сидорова"),
-                ("+79251234567", "Алексей Иванов"),
-                ("+79371234567", "Елена Смирнова"),
-            ]
-            conn.executemany(
-                'INSERT INTO phones (phone, name) VALUES (?, ?)',
-                test_data
-            )
-        conn.commit()
-
-
 @contextmanager
 def get_db():
     conn = sqlite3.connect(DATABASE)
@@ -318,7 +289,6 @@ def add_phones_batch():
 
 
 if __name__ == '__main__':
-    init_db()
     print("=" * 50)
     print("📱 API для базы номеров телефонов запущено")
     print("=" * 50)
