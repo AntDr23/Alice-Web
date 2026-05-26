@@ -13,7 +13,6 @@ def index():
     global resultt
     if request.method == 'POST':
         try:
-            print(111)
             tel = '+7' + str(request.form.get("number"))
             print(tel)
             response = requests.get(f"http://localhost:5000/api/phone/{tel}")
